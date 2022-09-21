@@ -2,12 +2,16 @@ version: "3.9"
 
 services:
   app:
+    networks:
+      - internet
+      - no-internet
     build:
       context: .
       args:
         - DEV=false
     ports:
       - '8454:8000'
+
     volumes:
       - ./app/:/app
       - dev-static-data:/vol/web
@@ -15,16 +19,18 @@ services:
       sh -c "python manage.py migrate &&
              python manage.py runserver 0.0.0.0:8000"
     environment:
-      - DB_HOST=db
-      - DB_NAME=${POSTGRES_DB}
-      - DB_USER=${POSTGRES_USER}
-      - DB_PASS=${POSTGRES_PASS}
+      - DB_HOST=${DB_HOST}
+      - DB_NAME=${DB_NAME}
+      - DB_USER=${DB_USER}
+      - DB_PASS=${DB_PASS}
       - DEBUG=1
-    depends_on: 
+    depends_on:
       - db
 
   db:
     image: postgres:13-alpine
+    networks:
+      - no-internet
     volumes:
       - dev-db-data:/var/lib/postgresql/data
     environment:
@@ -35,6 +41,9 @@ services:
       - '54054:5432'
   graphql-engine:
     image: hasura/graphql-engine:v2.11.2
+    networks:
+      - internet
+      - no-internet
     ports:
       - "54055:8080"
     depends_on:
@@ -42,9 +51,9 @@ services:
     restart: always
     environment:
       ## postgres database to store Hasura metadata
-      HASURA_GRAPHQL_METADATA_DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      HASURA_GRAPHQL_METADATA_DATABASE_URL: postgres://${DB_USER}:${DB_PASS}@${DB_HOST}:${DB_PORT}/${DB_NAME}
       ## this env var can be used to add the above postgres database to Hasura as a data source. this can be removed/updated based on your needs
-      PG_DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      PG_DATABASE_URL: postgres://${DB_USER}:${DB_PASS}@${DB_HOST}:${DB_PORT}/${DB_NAME}
       ## enable the console served by server
       HASURA_GRAPHQL_ENABLE_CONSOLE: "true" # set to "false" to disable console
       ## enable debugging mode. It is recommended to disable this in production
@@ -53,7 +62,32 @@ services:
       ## uncomment next line to set an admin secret
       # HASURA_GRAPHQL_ADMIN_SECRET: myadminsecretkey
 
+
+  jaeger:
+      image: jaegertracing/all-in-one:1.6
+      networks:
+        - internet
+        - no-internet
+      environment:
+        COLLECTOR_ZIPKIN_HTTP_PORT: 9411
+      ports:
+        - 8080:16686
+        - 5775/udp
+        - 6831/udp
+        - 6832/udp
+        - 5778
+        - 14268
+        - 9411
+
+
 volumes:
   dev-db-data:
   dev-static-data:
 
+networks:
+  no-internet:
+    # internal and accessible to the internet
+    driver: bridge
+    internal: true
+  internet:
+    driver: bridge
